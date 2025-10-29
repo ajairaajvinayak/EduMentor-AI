@@ -1,47 +1,108 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import datetime
 import io
 import contextlib
-import subprocess
-import tempfile
 import sqlite3
 import bcrypt
 import smtplib
-from email.mime.text import MIMEText
+import threading
 import time
-from config import generate_ai_response
+from email.mime.text import MIMEText
+from config import generate_ai_response  # must exist and return text for prompts
 
+# -------------------------
+# App config
+# -------------------------
 st.set_page_config(page_title="EduMentor AI", page_icon="🎓", layout="wide")
 
-# ---------------- EMAIL CONFIG ----------------
-SENDER_EMAIL = "your_email@gmail.com"       # ← replace with your Gmail
-SENDER_PASSWORD = "your_app_password"       # ← use Gmail App Password
+# -------------------------
+# Email (Gmail SMTP) config
+# -------------------------
+# Replace these with your sending Gmail and App Password (create App Password in Google account)
+SENDER_EMAIL = "your_email@gmail.com"
+SENDER_APP_PASSWORD = "your_app_password"
 
-# ---------------- AUTH FUNCTIONS ----------------
+# -------------------------
+# Helper: send email (no Streamlit UI calls inside thread)
+# -------------------------
+def _send_email_direct(to_email: str, subject: str, body: str):
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = to_email
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
+            server.sendmail(SENDER_EMAIL, [to_email], msg.as_string())
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+# -------------------------
+# Reminder background checker (runs once)
+# -------------------------
+def start_reminder_thread():
+    """Start a single background daemon thread that checks reminders in session_state."""
+    if st.session_state.get("_reminder_thread_started"):
+        return
+
+    def checker():
+        while True:
+            try:
+                reminders = st.session_state.get("reminders_by_user", {})
+                now_str = datetime.datetime.now().strftime("%H:%M")
+                for user_email, user_reminders in list(reminders.items()):
+                    # iterate copy because we may modify list
+                    for rem in list(user_reminders):
+                        if rem.get("sent"):
+                            continue
+                        # rem['time'] stored as "HH:MM"
+                        if rem.get("time") == now_str:
+                            ok, err = _send_email_direct(user_email, "EduMentor Study Reminder", rem.get("msg", "Time to study!"))
+                            rem["sent"] = True
+                            if not ok:
+                                rem["last_error"] = err
+                time.sleep(20)
+            except Exception:
+                time.sleep(20)
+
+    th = threading.Thread(target=checker, daemon=True)
+    th.start()
+    st.session_state["_reminder_thread_started"] = True
+
+
+# -------------------------
+# Users (bcrypt + CSV)
+# -------------------------
+USERS_CSV = "users.csv"
+
 def load_users():
     try:
-        return pd.read_csv("users.csv")
+        return pd.read_csv(USERS_CSV)
     except FileNotFoundError:
         df = pd.DataFrame(columns=["email", "password"])
-        df.to_csv("users.csv", index=False)
+        df.to_csv(USERS_CSV, index=False)
         return df
 
-def save_user(email, password):
+def save_user(email: str, password_plain: str):
     df = load_users()
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    df = pd.concat([df, pd.DataFrame({"email": [email], "password": [hashed]})])
-    df.to_csv("users.csv", index=False)
+    hashed = bcrypt.hashpw(password_plain.encode(), bcrypt.gensalt()).decode()
+    df = pd.concat([df, pd.DataFrame({"email": [email], "password": [hashed]})], ignore_index=True)
+    df.to_csv(USERS_CSV, index=False)
 
-def authenticate(email, password):
+def verify_user(email: str, password_plain: str) -> bool:
     df = load_users()
     user = df[df["email"] == email]
-    if not user.empty:
-        hashed = user.iloc[0]["password"]
-        return bcrypt.checkpw(password.encode(), hashed.encode())
-    return False
+    if user.empty:
+        return False
+    hashed = user.iloc[0]["password"]
+    return bcrypt.checkpw(password_plain.encode(), hashed.encode())
 
-# ---------------- SESSION STATE ----------------
+# -------------------------
+# Session state defaults
+# -------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user_email" not in st.session_state:
@@ -50,183 +111,249 @@ if "page_ready" not in st.session_state:
     st.session_state.page_ready = False
 if "login_time" not in st.session_state:
     st.session_state.login_time = None
+if "reminders_by_user" not in st.session_state:
+    # dict: {email: [ {time: "HH:MM", msg: "...", sent: False} ] }
+    st.session_state.reminders_by_user = {}
+if "show_login" not in st.session_state:
+    st.session_state.show_login = False
 
-# ---------------- EMAIL REMINDER FUNCTION ----------------
-def send_email(to_email, subject, body):
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = to_email
+# start background reminder checker
+start_reminder_thread()
 
+# -------------------------
+# Front splash page (logo)
+# -------------------------
+def front_page():
+    logo_path = "assets/logo.png"
     try:
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, [to_email], msg.as_string())
-        server.quit()
-        st.success(f"📩 Email sent to {to_email}")
-    except Exception as e:
-        st.error(f"❌ Email failed: {e}")
+        st.image(logo_path, use_container_width=True)
+    except Exception:
+        st.title("🎓 EduMentor AI")
 
-# ---------------- LOGIN / SIGNUP ----------------
-def login_signup():
-    st.title("🎓 EduMentor AI")
-    st.subheader("Sign in or Create an Account")
+    st.markdown(
+        """
+        <div style='text-align:center; margin-top:10px;'>
+            <h2>EduMentor AI</h2>
+            <p style='color: #666;'>Your AI-powered study companion — plan, practice and prepare smarter.</p>
+            <p>Built by <b>Ajai Raaj</b></p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    choice = st.radio("Select an option", ["🔐 Login", "🆕 Sign Up"])
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    if st.button("🚀 Get Started"):
+        st.session_state.show_login = True
+        # safe rerun
+        st.rerun()
 
-    if choice == "🔐 Login":
+# -------------------------
+# Login / Signup UI
+# -------------------------
+def login_signup_ui():
+    st.header("🔐 Login / Sign Up")
+    choice = st.radio("Select:", ["Login", "Sign Up"], index=0)
+
+    email = st.text_input("Email", key="auth_email")
+    password = st.text_input("Password", type="password", key="auth_password")
+
+    if choice == "Sign Up":
+        if st.button("Create Account"):
+            if not email or not password:
+                st.warning("Please enter email and password.")
+            else:
+                users_df = load_users()
+                if email in users_df["email"].values:
+                    st.warning("Email already registered. Please log in.")
+                else:
+                    save_user(email, password)
+                    st.success("Account created! Please log in.")
+    else:
         if st.button("Login"):
-            if authenticate(email, password):
+            if verify_user(email, password):
                 st.session_state.logged_in = True
                 st.session_state.user_email = email
                 st.session_state.login_time = time.time()
-                st.success("✅ Login successful!")
+                st.success("✅ Login successful")
                 st.session_state.page_ready = False
-                time.sleep(0.8)
+                time.sleep(0.5)
                 st.rerun()
             else:
-                st.error("❌ Invalid email or password.")
+                st.error("Invalid credentials.")
 
-    elif choice == "🆕 Sign Up":
-        if st.button("Create Account"):
-            if email and password:
-                users = load_users()
-                if email in users["email"].values:
-                    st.warning("⚠️ Email already registered.")
-                else:
-                    save_user(email, password)
-                    st.success("✅ Account created! Please log in.")
-            else:
-                st.warning("⚠️ Please fill both fields.")
+# -------------------------
+# Study planner UI
+# -------------------------
+def study_planner_ui():
+    st.header("📅 Study Planner")
+    name = st.text_input("Your name", key="planner_name")
+    goal = st.text_input("Goal (e.g., Crack Data Science Interviews)", key="planner_goal")
+    duration = st.number_input("Duration (weeks)", min_value=1, max_value=52, value=4, key="planner_duration")
+    hours = st.number_input("Hours / day", min_value=1, max_value=12, value=2, key="planner_hours")
+    focus = st.text_area("Focus areas (comma separated)", placeholder="Python, SQL, ML", key="planner_focus")
 
-# ---------------- STUDY PLANNER ----------------
-def study_planner():
-    st.header("📅 Generate Your Study Plan")
-
-    name = st.text_input("👤 Your Name")
-    goal = st.text_input("🎯 Your Goal")
-    duration = st.number_input("📆 Duration (weeks)", min_value=1, max_value=52, value=4)
-    hours_per_day = st.number_input("⏰ Study Hours per Day", min_value=1, max_value=12, value=3)
-    focus_areas = st.text_area("📚 Focus Areas (comma-separated)", placeholder="Python, SQL, ML...")
-
-    if st.button("Generate Plan"):
-        if not name or not goal or not focus_areas:
-            st.warning("⚠️ Please fill all fields.")
+    if st.button("Generate Study Plan"):
+        if not name or not goal or not focus.strip():
+            st.warning("Please fill all fields.")
         else:
-            topics = [t.strip() for t in focus_areas.split(",") if t.strip()]
+            topics = [t.strip() for t in focus.split(",") if t.strip()]
             total_days = duration * 7
             days_per_topic = max(1, total_days // len(topics))
-            plan = []
+            rows = []
             for i, topic in enumerate(topics, 1):
                 start_day = (i - 1) * days_per_topic + 1
                 end_day = min(start_day + days_per_topic - 1, total_days)
-                plan.append({
-                    "Topic": topic,
-                    "Days": f"Day {start_day} - Day {end_day}",
-                    "Hours/Day": hours_per_day
-                })
-            df = pd.DataFrame(plan)
-            st.success(f"✅ Study Plan for {name}")
-            st.write(f"🎯 **Goal:** {goal}")
+                rows.append({"Topic": topic, "Days": f"Day {start_day} - Day {end_day}", "Hours/Day": hours})
+            df = pd.DataFrame(rows)
+            st.success(f"Study plan generated for {name}")
             st.dataframe(df, use_container_width=True)
-            df.to_csv(f"study_plan_{st.session_state.user_email}.csv", index=False)
+            # save per-user
+            user_file = f"study_plan_{st.session_state.user_email}.csv"
+            df.to_csv(user_file, index=False)
+            st.info(f"Saved plan to {user_file}")
 
-# ---------------- INTERVIEW QUESTIONS ----------------
-def interview_questions():
-    st.header("🎯 AI-Generated Interview Questions")
-    topic = st.text_input("Enter any topic (e.g., Python, SQL, Cloud, ML)")
-
-    if st.button("🤖 Generate Questions"):
+# -------------------------
+# Interview questions UI (AI)
+# -------------------------
+def interview_questions_ui():
+    st.header("🎯 AI-generated Interview Questions")
+    topic = st.text_input("Enter any topic (any topic you want)", key="iq_topic")
+    if st.button("Generate Questions"):
         if not topic.strip():
-            st.warning("⚠️ Please enter a topic.")
+            st.warning("Enter a topic.")
         else:
-            with st.spinner("Generating AI questions..."):
-                prompt = f"Generate 10 unique interview questions (basic to advanced) on {topic}"
-                ai_response = generate_ai_response(prompt)
-                st.subheader(f"💡 Interview Questions on {topic}")
-                st.markdown(ai_response)
+            with st.spinner("Generating questions..."):
+                prompt = f"Generate 10 unique interview questions (from basic to advanced) on: {topic}"
+                ai_text = generate_ai_response(prompt)
+                st.markdown(f"### Questions on **{topic}**")
+                st.markdown(ai_text)
 
-# ---------------- REMINDER SYSTEM ----------------
-def reminder_system():
-    st.header("⏰ Study Reminder")
+# -------------------------
+# Code practice UI (basic)
+# -------------------------
+def code_practice_ui():
+    st.header("💻 Code Practice")
+    lang = st.selectbox("Language", ["Python", "SQL"])
+    code = st.text_area("Write code here", height=250, key="practice_code")
+    if st.button("Run Code"):
+        if not code.strip():
+            st.warning("Write some code first.")
+        else:
+            if lang == "Python":
+                with io.StringIO() as buf, contextlib.redirect_stdout(buf):
+                    try:
+                        exec(code, {})
+                        out = buf.getvalue()
+                        st.code(out or "✅ Ran successfully", language="python")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+            else:  # SQL (sqlite in-memory)
+                try:
+                    conn = sqlite3.connect(":memory:")
+                    cursor = conn.cursor()
+                    cursor.executescript(code)
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                    tables = cursor.fetchall()
+                    st.info(f"Tables: {tables}")
+                    conn.close()
+                except Exception as e:
+                    st.error(f"SQL Error: {e}")
 
-    reminder_time = st.time_input("Set reminder time")
-    message = st.text_input("Reminder message", placeholder="E.g., Take a break or start revision!")
+# -------------------------
+# Reminder UI (schedules email)
+# -------------------------
+def reminder_ui():
+    st.header("⏰ Reminders (emails + on-screen)")
+    st.write("Set a daily reminder time (24-hr). Email will be sent at that time (app must be running).")
+
+    time_sel = st.time_input("Reminder time (HH:MM)", key="rem_time")
+    msg = st.text_input("Message / topic", key="rem_msg")
 
     if st.button("Add Reminder"):
-        reminders = st.session_state.get("reminders", [])
-        reminders.append({"time": str(reminder_time), "msg": message})
-        st.session_state["reminders"] = reminders
-        st.success("✅ Reminder added!")
+        user = st.session_state.user_email
+        if not user:
+            st.error("No logged-in user.")
+            return
+        tstr = time_sel.strftime("%H:%M")
+        reminders = st.session_state.reminders_by_user.get(user, [])
+        reminders.append({"time": tstr, "msg": msg, "sent": False})
+        st.session_state.reminders_by_user[user] = reminders
+        st.success(f"Reminder set at {tstr} — we'll email you at that time.")
+        st.info(f"Reminder scheduled: {tstr} — {msg}")
 
-    st.write("### 🔔 Your Reminders:")
-    reminders = st.session_state.get("reminders", [])
-    for r in reminders:
-        st.write(f"🕒 {r['time']} — {r['msg']}")
+    user = st.session_state.user_email
+    user_rem = st.session_state.reminders_by_user.get(user, [])
+    if user_rem:
+        st.write("Your reminders:")
+        for r in user_rem:
+            st.write(f"- {r['time']} — {r['msg']} (sent: {r.get('sent', False)})")
+    else:
+        st.info("No reminders set yet.")
 
-    now = datetime.datetime.now().strftime("%H:%M")
-    for r in reminders:
-        if r["time"] == now:
-            st.warning(f"⏰ Reminder: {r['msg']}")
-            send_email(st.session_state.user_email, "Study Reminder", r["msg"])
-
-# ---------------- REST ALERT ----------------
-def rest_alert():
-    if st.session_state.login_time:
-        elapsed = time.time() - st.session_state.login_time
-        if elapsed >= 1800:  # 30 minutes
-            st.warning("⚠️ You've been active for 30 minutes. Please take a 10-minute break!")
-            st.info("🕓 Page will reset in 30 seconds...")
+# -------------------------
+# 30-minute rest alert
+# -------------------------
+def check_rest_alert():
+    if st.session_state.login_time is None:
+        return
+    elapsed = time.time() - st.session_state.login_time
+    if elapsed >= 1800:  # 30 minutes
+        # show modal-like block for 30 seconds
+        with st.expander("⏳ You've been active for 30 minutes — take 10 minutes rest", expanded=True):
+            st.write("Please step away for 10 minutes to rest your eyes and mind.")
+            st.write("This message will close in 30 seconds.")
             time.sleep(30)
-            st.session_state.login_time = time.time()
-            st.rerun()
+        # reset timer
+        st.session_state.login_time = time.time()
+        st.rerun()
 
-# ---------------- MAIN DASHBOARD ----------------
+# -------------------------
+# App navigation
+# -------------------------
 def dashboard():
-    st.sidebar.title("📘 Navigation")
-    page = st.sidebar.radio("Go to", [
-        "📅 Study Planner",
-        "🎯 Interview Questions (AI)",
-        "⏰ Study Reminders"
-    ])
+    st.sidebar.title("Navigation")
+    choice = st.sidebar.radio("Go to", ["Study Planner", "Interview Questions", "Code Practice", "Reminders", "Logout"])
 
-    if page == "📅 Study Planner":
-        study_planner()
-    elif page == "🎯 Interview Questions (AI)":
-        interview_questions()
-    elif page == "⏰ Study Reminders":
-        reminder_system()
-
-    rest_alert()
-
-    if st.sidebar.button("🚪 Logout"):
+    if choice == "Study Planner":
+        study_planner_ui()
+    elif choice == "Interview Questions":
+        interview_questions_ui()
+    elif choice == "Code Practice":
+        code_practice_ui()
+    elif choice == "Reminders":
+        reminder_ui()
+    elif choice == "Logout":
         st.session_state.logged_in = False
+        st.session_state.user_email = None
         st.session_state.page_ready = False
         st.rerun()
 
-# ---------------- APP ROUTER ----------------
-if not st.session_state.logged_in:
-    login_signup()
+    # check rest alert each dashboard load
+    check_rest_alert()
+
+# -------------------------
+# Main entry & routing
+# -------------------------
+if not st.session_state.show_login and not st.session_state.logged_in:
+    front_page()
+elif not st.session_state.logged_in:
+    login_signup_ui()
 else:
+    # logged in
     if not st.session_state.page_ready:
-        st.success("✅ Login successful! Click below to continue.")
+        st.success("✅ Login successful.")
         if st.button("Next ➡️"):
             st.session_state.page_ready = True
+            # set login time (start session timer)
+            st.session_state.login_time = time.time()
             st.rerun()
     else:
         dashboard()
 
-# ---------------- FOOTER ----------------
+# -------------------------
+# Footer
+# -------------------------
 st.markdown("---")
 st.markdown(
-    """
-    <div style='text-align: center; padding-top: 10px; font-size: 15px;'>
-        🚀 Built with ❤️ using <b>Streamlit</b> + <b>Gemini AI</b><br>
-        👨‍💻 Credits: <b>Ajai Raaj</b>
-    </div>
-    """,
+    "<div style='text-align:center;'>🚀 Built with ❤️ by <b>Ajai Raaj</b></div>",
     unsafe_allow_html=True
 )
