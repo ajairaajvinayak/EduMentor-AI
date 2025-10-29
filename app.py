@@ -222,7 +222,14 @@ def interview_questions_ui():
             st.warning("Enter a topic.")
         else:
             with st.spinner("Generating questions..."):
-                prompt = f"Generate 10 unique interview questions (from basic to advanced) on: {topic}"
+                prompt = f""""
+                    generate the proper answer for the interview questions on this topic and should 
+                    give the detailed explanation as well as examples where necessary and should 
+                    explain it in simple terms and if coding or algorithm is involved, provide code snippets in any 
+                    programming language of your choice. Topic and should answer and explain like professional 
+                    interviewers in those topics with if dsa or coding is involved, provide code snippets.and should 
+                    explain with an example you are an expert interview question generator and answerer.
+                    : {topic}"""
                 ai_text = generate_ai_response(prompt)
                 st.markdown(f"### Questions on **{topic}**")
                 st.markdown(ai_text)
