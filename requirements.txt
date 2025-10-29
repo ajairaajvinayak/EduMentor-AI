@@ -1,5 +1,0 @@
-streamlit
-pandas
-bcrypt
-sqlite3
-smtplib
