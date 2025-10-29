@@ -7,7 +7,7 @@ load_dotenv()
 
 # ✅ Set your Gemini API key
 # Use environment variable if available, otherwise fallback to the direct key
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", "AIzaSyDpZvldMA8eitzUW_EUjIDj6-m8eMi_aa4")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 
 if not GEMINI_API_KEY:
     raise ValueError("❌ Google API Key is missing! Please set GOOGLE_API_KEY in your environment or .env file.")
@@ -34,3 +34,4 @@ def generate_ai_response(prompt: str) -> str:
         return response.text.strip()
     except Exception as e:
         return f"❌ Error generating response: {e}"
+
