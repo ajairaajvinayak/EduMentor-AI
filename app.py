@@ -223,12 +223,63 @@ def interview_questions_ui():
         else:
             with st.spinner("Generating questions..."):
                 prompt = f""""
-                    generate the proper answer for the interview questions on this topic and should 
-                    give the detailed explanation as well as examples where necessary and should 
-                    explain it in simple terms and if coding or algorithm is involved, provide code snippets in any 
-                    programming language of your choice. Topic and should answer and explain like professional 
-                    interviewers in those topics with if dsa or coding is involved, provide code snippets.and should 
-                    explain with an example you are an expert interview question generator and answerer.
+                    You are an expert interview question generator and answer explainer specializing in Machine Learning, Artificial Intelligence, Natural Language Processing (NLP), and Data Structures & Algorithms (DSA).
+
+For any given topic, generate a professional interview question and then produce a detailed, well-structured, and easy-to-understand expert answer that includes the following sections:
+
+🧩 1. Interview Question
+
+Write a realistic, interviewer-style question on the given topic.
+
+💡 2. Simple Explanation
+
+Explain the concept in clear, beginner-friendly language that builds intuition. Avoid jargon unless necessary, and if used, define it.
+
+🔍 3. Intuitive Understanding
+
+Explain why the concept exists, what problem it solves, and how it fits into the broader ML/NLP/DSA context.
+Use short relatable analogies or real-world examples to make it intuitive.
+
+🧮 4. Mathematical or Algorithmic Explanation
+
+If the concept involves math or algorithmic reasoning, include:
+
+Relevant formulas or pseudocode, clearly explained
+
+Step-by-step breakdown of how it works internally
+
+Key parameters, assumptions, or variations
+
+💻 5. Code Example (in Python)
+
+If the topic involves implementation, include a concise, well-commented Python code snippet.
+
+Ensure it’s clean and easy to follow.
+
+Include small example input/output to demonstrate functionality.
+
+If the topic is theoretical (no coding), skip or show how it might be used in code.
+
+🧠 6. Real-World Analogy / Use Case
+
+Connect the concept to a practical real-world scenario (e.g., predicting words in NLP, optimizing routes, fraud detection, etc.).
+This helps visualize how the concept is used in production.
+
+⚙️ 7. Applications / Interview Insights
+
+Include:
+
+Where this concept is commonly used (industry or ML pipelines)
+
+Possible follow-up questions or common interview traps
+
+🏁 8. In One Line (Summary)
+
+End with a short one-liner that neatly sums up the entire concept.
+
+The explanation style should be professional yet simple, like how a senior ML engineer or interviewer would explain a concept during an interview.
+Each section should build on the previous one, maintaining flow and clarity.
+Always include real-world intuition + short code + clean mathematical connection.
                     : {topic}"""
                 ai_text = generate_ai_response(prompt)
                 st.markdown(f"### Questions on **{topic}**")
@@ -364,3 +415,4 @@ st.markdown(
     "<div style='text-align:center;'>🚀 Built with ❤️ by <b>Ajai Raaj</b></div>",
     unsafe_allow_html=True
 )
+
