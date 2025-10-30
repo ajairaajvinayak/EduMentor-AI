@@ -223,10 +223,8 @@ def interview_questions_ui():
         else:
             with st.spinner("cooking concept"):
                 prompt = f""""
-                    first explain the concept of the given words or question's concept in 300 words in crisp and with the real world example then do these things You are an expert interview question generator and answer explainer specializing in Machine Learning, Artificial Intelligence, Natural Language Processing (NLP), and Data Structures & Algorithms (DSA).
-
-For any given topic, generate a professional interview question and then produce a detailed, well-structured, and easy-to-understand expert answer that includes the following sections:
-
+                    first explain the concept of the given words or question's concept in 300 words in crisp and with the real world example then do these things , if user wants the image of it please find 
+                    the related topic's image from the internet and provide some article or suggested course link for the user's related question.
 🧩 1. Interview Question
 
 Write a realistic, interviewer-style question on the given topic.
@@ -272,6 +270,8 @@ Include:
 Where this concept is commonly used (industry or ML pipelines)
 
 Possible follow-up questions or common interview traps
+
+suggest the user with the related youtube video that is related to the user's input question and if you can means run the video at the live webpage and you can share the link for the reference or youtube video related to the user input concept 
 
 🏁 8. In One Line (Summary)
 
@@ -415,5 +415,6 @@ st.markdown(
     "<div style='text-align:center;'>🚀 Built with ❤️ by <b>Ajai Raaj</b></div>",
     unsafe_allow_html=True
 )
+
 
 
