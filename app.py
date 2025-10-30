@@ -217,13 +217,13 @@ def study_planner_ui():
 def interview_questions_ui():
     st.header("🎯 AI-generated Interview Questions")
     topic = st.text_input("Enter any topic (any topic you want)", key="iq_topic")
-    if st.button("Generate Questions"):
+    if st.button("Explain"):
         if not topic.strip():
             st.warning("Enter a topic.")
         else:
-            with st.spinner("Generating questions..."):
+            with st.spinner("cooking concept"):
                 prompt = f""""
-                    You are an expert interview question generator and answer explainer specializing in Machine Learning, Artificial Intelligence, Natural Language Processing (NLP), and Data Structures & Algorithms (DSA).
+                    first explain the concept of the given words or question's concept in 300 words in crisp and with the real world example then do these things You are an expert interview question generator and answer explainer specializing in Machine Learning, Artificial Intelligence, Natural Language Processing (NLP), and Data Structures & Algorithms (DSA).
 
 For any given topic, generate a professional interview question and then produce a detailed, well-structured, and easy-to-understand expert answer that includes the following sections:
 
@@ -415,4 +415,5 @@ st.markdown(
     "<div style='text-align:center;'>🚀 Built with ❤️ by <b>Ajai Raaj</b></div>",
     unsafe_allow_html=True
 )
+
 
